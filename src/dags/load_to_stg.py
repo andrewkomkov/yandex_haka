@@ -16,26 +16,30 @@ from sqlalchemy import create_engine
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
-from airflow.providers.postgres.hooks.postgres import PostgresHook
 
 
 log = logging.getLogger(__name__)
-pg_conn_id = 'PG_WAREHOUSE_CONNECTION'
 engine = create_engine('postgresql+psycopg2://jovyan:jovyan@localhost/de')
-
 
 
 def download_unpack_zips(url, target_folder):
     """
-    get list of href links ending on .zip from url
+    Get files contained in zip from url
     """
     file_links = []
     r = requests.get(url)
+
+    if r.status_code != 200:
+        log.warn(f"Request failed. Reason:\n {r.content}")
+        return
+
     soup = BeautifulSoup(r.text, features="html.parser")
     links = soup.findAll('a', href=True)
     for link in links:
         if link['href'].endswith('.zip'):
             file_links.append(url + link['href'])
+
+    
     Path(target_folder).mkdir(parents=True, exist_ok=True)
     for link in file_links:
         r = requests.get(link)
@@ -44,7 +48,7 @@ def download_unpack_zips(url, target_folder):
 
 def load_file_to_stg(file_name, target_table):
     """
-    Load json file_name to staging
+    Load single json file named "file_name" to staging
     """
     d = None  
     data = None  
@@ -62,9 +66,12 @@ def load_file_to_stg(file_name, target_table):
         to_db.append(m)
     df = pd.DataFrame.from_dict(to_db)
     df['object_value'] = df['object_value'].apply(json.dumps)
-    df.to_sql(con=engine.get_conn(), name=target_table, schema='team_1_stg',if_exists='replace')
+    df.to_sql(con=engine, name=target_table, schema='team_1_stg',if_exists='replace')
 
 def create_tasks_to_load(source_folder, dag):
+    """
+    Create tasks to upload all the files
+    """
     load_tasks = []
     for i in listdir(source_folder):
         if isfile(join(source_folder, i)):
@@ -101,6 +108,6 @@ download_files = PythonOperator(
         dag = dag
 )
 
-load_files = create_tasks_to_load("/data", dag)
+upload_files = create_tasks_to_load("/data", dag)
     
-start >> download_files >> load_files
+start >> download_files >> upload_files
