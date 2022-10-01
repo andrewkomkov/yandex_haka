@@ -92,7 +92,7 @@ def create_tasks_to_load(source_folder, dag):
 
 dag =  DAG(
     dag_id = "load_to_stg",
-    schedule_interval = None,
+    schedule_interval = "@daily",
     start_date = pendulum.datetime(2022, 1, 1)
 )
 
@@ -108,6 +108,10 @@ download_files = PythonOperator(
         dag = dag
 )
 
+
+
 upload_files = create_tasks_to_load("/data", dag)
+
+end = EmptyOperator(task_id="end", dag=dag)
     
-start >> download_files >> upload_files
+start >> download_files >> upload_files >> end
